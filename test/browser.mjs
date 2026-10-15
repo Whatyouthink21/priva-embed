@@ -1,9 +1,21 @@
+import { spawn } from 'node:child_process';
 import { chromium as playwright } from '@playwright/test';
 import chromium from '@sparticuz/chromium';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 mkdirSync('.cache', { recursive: true });
+// The server is started in setup-required mode so the checks are deterministic
+// and never depend on outbound provider access.
+const server = spawn(process.execPath, ['src/server.js'], {
+  env: { ...process.env, PORT: '3000', TMDB_API_KEY: '', CONSUMET_MODE: 'library' },
+  stdio: ['ignore', 'pipe', 'inherit']
+});
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Server did not log a startup line in time')), 20000);
+  server.stdout.on('data', chunk => { if (String(chunk).includes('listening on port')) { clearTimeout(timer); resolve(); } });
+  server.on('exit', code => { clearTimeout(timer); reject(new Error(`Server exited early (${code})`)); });
+});
 const localLibs = path.resolve('.cache/chromium-libs/lib');
 const browser = await playwright.launch({
   executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || await chromium.executablePath(),
@@ -42,4 +54,4 @@ try {
   await page.getByText('Invalid embed URL.').waitFor();
   assert.deepEqual(errors, []);
   console.log('Browser checks passed: actual demo playback, TV iframe generation, setup errors, API request, mobile layout, invalid URLs.');
-} finally { await browser.close(); }
+} finally { await browser.close(); server.kill('SIGTERM'); }

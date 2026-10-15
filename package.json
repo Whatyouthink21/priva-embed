@@ -3,10 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "CinePro-powered iframe player and source API",
+  "description": "Consumet-powered iframe player and source API",
   "scripts": {
-    "postinstall": "npm ci --prefix vendor/cinepro",
-    "build": "npm run build --prefix vendor/cinepro",
     "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "node --env-file-if-exists=.env src/server.js",
     "test": "node --test test/*.test.js",
@@ -16,6 +14,7 @@
     "node": ">=22.16"
   },
   "dependencies": {
+    "@consumet/extensions": "^1.8.8",
     "express": "^5.1.0",
     "hls.js": "^1.6.13",
     "ipaddr.js": "^2.5.0"

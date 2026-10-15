@@ -31,7 +31,7 @@ function failSource() {
     return;
   }
   const next = items.findIndex((_, index) => !attempted.has(index));
-  if (next >= 0) { notice('This source failed. Trying the next provider…'); selectSource(next, true); }
+  if (next >= 0) { notice('This source failed. Trying the next one…'); selectSource(next, true); }
   else { clearTimeout(fallbackTimer); $('loading').hidden = true; overlay('No playable source.', 'All returned streams failed. Sources can expire or become unavailable. Reload to try again.', 'Reload sources ↻', load); }
 }
 function selectSource(index, shouldPlay = false) {
@@ -41,7 +41,7 @@ function selectSource(index, shouldPlay = false) {
   $('source').value = String(index);
   $('notice').hidden = true;
   $('loading').hidden = false;
-  overlay('Preparing playback…', 'Connecting to ' + (source.provider?.name || 'the media host') + '.');
+  overlay('Preparing playback…', 'Connecting to ' + (source.provider || 'the media host') + '.');
   const revision = generation;
   fallbackTimer = setTimeout(() => { if (generation === revision) failSource(); }, 30000);
   const ready = () => {
@@ -65,7 +65,7 @@ function selectSource(index, shouldPlay = false) {
   } else video.src = source.url;
   (source.subtitles || []).forEach(subtitle => {
     const track = document.createElement('track');
-    track.kind = 'subtitles'; track.label = subtitle.label || 'Subtitles'; track.src = subtitle.url;
+    track.kind = 'subtitles'; track.label = subtitle.label || subtitle.lang || 'Subtitles'; track.src = subtitle.url;
     video.append(track);
   });
 }
@@ -75,7 +75,7 @@ async function load() {
   $('source').hidden = true; $('notice').hidden = true; $('loading').hidden = true;
   if (demo) {
     $('kind').textContent = 'LOCAL PLAYBACK DEMO';
-    $('watermark').textContent = 'GENERATED TEST CLIP · NO CINEPRO EXTRACTION';
+    $('watermark').textContent = 'GENERATED TEST CLIP · NO CONSUMET EXTRACTION';
     items = [{ url: '/demo.mp4', type: 'mp4', provider: { name: 'Local demo' } }];
     selectSource(0); return;
   }
@@ -85,7 +85,8 @@ async function load() {
     overlay('Invalid embed URL.', 'Use /embed/movie/{id} or /embed/tv/{id}/{season}/{episode}.'); return;
   }
   $('kind').textContent = isTV ? `TV EPISODE · ${parts[2]} / S${parts[3]} E${parts[4]}` : `MOVIE · TMDB ${parts[2]}`;
-  overlay('Finding your stream.', 'CinePro is checking providers. This can take up to 90 seconds.');
+  $('heading').textContent = 'Finding your stream.';
+  overlay('Finding your stream.', 'Consumet is checking providers. This can take up to 90 seconds.');
   $('loading').hidden = false;
   try {
     const response = await fetch('/api/sources/' + parts.slice(1).join('/'));
@@ -94,9 +95,10 @@ async function load() {
     if (!response.ok) throw new Error(data.error?.message || 'Source resolution failed.');
     items = (data.sources || []).map(source => ({ ...source, subtitles: data.subtitles || [] }));
     if (!items.length) throw new Error('No playable sources were returned.');
+    if (data.title) $('kind').textContent = data.title.toUpperCase();
     $('source').replaceChildren();
-    items.forEach((source, i) => $('source').add(new Option(`${source.provider?.name || 'Source ' + (i + 1)} · ${source.quality || source.type}`, String(i))));
-    $('source').hidden = false;
+    items.forEach((source, i) => $('source').add(new Option(`${source.provider || 'Source ' + (i + 1)}${source.server ? ' / ' + source.server : ''} · ${source.quality || source.type}`, String(i))));
+    $('source').hidden = items.length > 1;
     selectSource(0);
   } catch (error) {
     if (revision !== generation) return;

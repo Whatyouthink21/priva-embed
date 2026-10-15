@@ -42,23 +42,18 @@ export function createTokens(secret) {
     }
   };
 }
-// CinePro providers wrap the real stream URL and required headers in OMSS proxy data.
-export function unwrapSource(value) {
-  const parsed = new URL(value, 'http://core.internal');
-  if (parsed.pathname === '/v1/proxy') {
-    let data = parsed.searchParams.get('data');
-    for (let i = 0; i < 3; i++) {
-      try { const result = JSON.parse(data); validateUrl(result.url); return result; }
-      catch { data = decodeURIComponent(data); }
-    }
-    throw new Error('Invalid Core proxy URL');
-  }
-  validateUrl(value);
-  return { url: value, headers: {} };
-}
+// Consumet returns plain provider URLs plus the headers they need. Several hosts
+// reject requests without a browser user-agent, so a sane default is filled in.
+const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+// Only headers a media host can legitimately need are forwarded.
+export const ALLOWED_HEADERS = ['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'authorization', 'cookie'];
 function safeHeaders(headers = {}) {
-  return Object.fromEntries(Object.entries(headers).filter(([k, v]) =>
-    ['referer', 'origin', 'user-agent', 'accept', 'accept-language', 'authorization', 'cookie'].includes(k.toLowerCase()) && typeof v === 'string'));
+  const result = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (typeof value === 'string' && value.length < 4096 && ALLOWED_HEADERS.includes(key.toLowerCase())) result[key] = value;
+  }
+  if (!Object.keys(result).some(key => key.toLowerCase() === 'user-agent')) result['User-Agent'] = DEFAULT_UA;
+  return result;
 }
 export function rewritePlaylist(text, base, data, tokens) {
   const link = value => {
