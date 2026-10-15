@@ -39,7 +39,7 @@ $('copy-embed').onclick = async () => {
 $('fetch-sources').onclick = async () => {
   if (!$('embed-form').reportValidity()) return;
   const button = $('fetch-sources'); button.disabled = true; button.textContent = 'Resolving…';
-  $('api-path').textContent = mediaPath('/api/sources'); $('api-response').textContent = '// Waiting for CinePro providers (up to 90 seconds)…';
+  $('api-path').textContent = mediaPath('/api/sources'); $('api-response').textContent = '// Waiting for Consumet providers (up to 90 seconds)…';
   try {
     const response = await fetch(mediaPath('/api/sources'));
     const data = await response.json();
@@ -50,7 +50,7 @@ $('fetch-sources').onclick = async () => {
 fetch('/api/health').then(r => r.json()).then(data => {
   const el = $('health'); el.replaceChildren();
   const dot = document.createElement('span'); dot.className = 'dot'; el.append(dot);
-  if (data.status === 'ready') el.append('CinePro connected. Ready to resolve sources.');
-  else { el.classList.add('warning'); el.append(data.cinepro.configured ? 'CinePro is configured but not reachable. Check the Core process or CINEPRO_URL.' : 'Resolver setup required — add your TMDB API key to enable extraction. The local playback demo is ready.'); }
+  if (data.status === 'ready') el.append(`Consumet ready (${data.mode === 'api' ? 'hosted API' : 'bundled providers'}). Ready to resolve sources.`);
+  else { el.classList.add('warning'); el.append(data.consumet.configured ? (data.mode === 'api' ? 'Consumet API is configured but not reachable. Check CONSUMET_API_URL.' : 'Consumet is configured but TMDB is not reachable. Check TMDB_API_KEY and network access.') : 'Resolver setup required — add your TMDB API key to enable extraction. The local playback demo is ready.'); }
 }).catch(() => { $('health').textContent = 'Unable to check the resolver connection.'; $('health').classList.add('warning'); });
 updateCode();

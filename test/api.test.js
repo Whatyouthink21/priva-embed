@@ -2,60 +2,101 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createApp } from '../src/app.js';
-import { createTokens, publicAddress, validateUrl, unwrapSource, rewritePlaylist } from '../src/media.js';
+import { createTokens, publicAddress, validateUrl, rewritePlaylist } from '../src/media.js';
 async function withApp(options, run) {
   const server = createApp(options).listen(0, '127.0.0.1');
   await once(server, 'listening');
   try { await run(`http://127.0.0.1:${server.address().port}`); }
   finally { await new Promise(resolve => server.close(resolve)); }
 }
+function fakeResolver(result, calls = []) {
+  return {
+    calls,
+    async health() { return true; },
+    async resolve(query) {
+      calls.push(query);
+      if (typeof result === 'function') return result(query);
+      return result;
+    }
+  };
+}
+const payload = {
+  provider: 'FlixHQ',
+  providerId: 'flixhq',
+  mediaId: 'movie/watch-test-1',
+  episodeId: '9',
+  title: 'Test Movie',
+  headers: { Referer: 'https://provider.example/' },
+  sources: [
+    { url: 'https://media.example/master.m3u8', type: 'hls', quality: '1080p', provider: 'FlixHQ', server: 'upcloud' },
+    { url: 'https://media.example/file.mpd', type: 'dash', quality: '1080p' },
+    { url: 'https://media.example/page', type: 'embed' },
+    { url: 'http://127.0.0.1/private.mp4', type: 'mp4' }
+  ],
+  subtitles: [
+    { url: 'https://media.example/en.vtt', lang: 'English', label: 'English' },
+    { url: 'http://127.0.0.1/x.vtt', lang: 'Private' }
+  ],
+  diagnostics: [{ provider: 'flixhq', server: 'upcloud', status: 'ok' }]
+};
 test('health honestly reports missing setup; sources return actionable errors', async () => {
   await withApp({}, async base => {
     const health = await (await fetch(base + '/api/health')).json();
     assert.equal(health.status, 'setup_required');
+    assert.equal(health.consumet.configured, false);
     const response = await fetch(base + '/api/sources/movie/550');
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error.code, 'SETUP_REQUIRED');
   });
 });
+test('health reports readiness and mode when a resolver is configured', async () => {
+  await withApp({ resolver: fakeResolver(payload), configured: true, mode: 'api' }, async base => {
+    const health = await (await fetch(base + '/api/health')).json();
+    assert.equal(health.status, 'ready');
+    assert.equal(health.mode, 'api');
+    assert.equal(health.consumet.reachable, true);
+  });
+});
 test('validates movie and episode IDs before upstream access', async () => {
-  await withApp({}, async base => {
+  await withApp({ resolver: fakeResolver(payload), configured: true }, async base => {
     for (const route of ['/movie/abc', '/movie/0', '/tv/1/0/2', '/tv/1/1/-2', '/movie/999999999999']) {
       assert.equal((await fetch(base + '/api/sources' + route)).status, 400, route);
     }
   });
 });
-test('movie and TV map to Core, normalize source URLs and filter unsupported formats', async () => {
+test('movie and TV map to Consumet, sign source URLs and drop unsupported formats', async () => {
   const calls = [];
   const tokens = createTokens('test');
-  const proxy = 'http://localhost:3101/v1/proxy?data=' + encodeURIComponent(JSON.stringify({ url: 'https://media.example/master.m3u8', headers: { Referer: 'https://provider.example/' } }));
-  await withApp({ configured: true, secret: 'test', fetchCore: async url => {
-    calls.push(url);
-    return new Response(JSON.stringify({ responseId: 'abc', sources: [
-      { url: proxy, type: 'hls', quality: 'auto', provider: { name: 'Test' } },
-      { url: 'https://media.example/file.mpd', type: 'dash' },
-      { url: 'https://media.example/page', type: 'embed' },
-      { url: 'http://127.0.0.1/private', type: 'mp4' }
-    ], subtitles: [{ url: 'https://media.example/en.vtt', format: 'vtt' }, { url: 'https://media.example/en.srt', format: 'srt' }] }));
-  } }, async base => {
-    for (const endpoint of ['/api/sources/movie/550', '/api/sources/tv/1399/1/2']) {
+  await withApp({ resolver: fakeResolver(payload, calls), configured: true, secret: 'test' }, async base => {
+    for (const [endpoint, expected] of [
+      ['/api/sources/movie/550', { type: 'movie', id: '550', season: undefined, episode: undefined }],
+      ['/api/sources/tv/1399/1/2', { type: 'tv', id: '1399', season: 1, episode: 2 }]
+    ]) {
       const response = await fetch(base + endpoint); assert.equal(response.status, 200);
-      const body = await response.json(); assert.equal(body.sources.length, 1); assert.equal(body.subtitles.length, 1);
+      const body = await response.json();
+      assert.equal(body.sources.length, 1);
+      assert.equal(body.subtitles.length, 1);
+      assert.equal(body.title, 'Test Movie');
+      assert.equal(body.provider, 'FlixHQ');
       const token = new URL(body.sources[0].url, base).searchParams.get('token');
-      const decoded = tokens.read(token); assert.equal(decoded.url, 'https://media.example/master.m3u8');
+      const decoded = tokens.read(token);
+      assert.equal(decoded.url, 'https://media.example/master.m3u8');
       assert.equal(decoded.headers.Referer, 'https://provider.example/');
+      assert.deepEqual(calls.at(-1), expected);
     }
-    assert.ok(calls[0].endsWith('/v1/movies/550'));
-    assert.ok(calls[1].endsWith('/v1/tv/1399/seasons/1/episodes/2'));
   });
 });
-test('propagates Core errors and handles timeouts/network failures', async () => {
-  for (const [fetchCore, expected] of [
-    [async () => new Response(JSON.stringify({ error: { code: 'NO_SOURCES_AVAILABLE' } }), { status: 404 }), 404],
-    [async () => { throw new DOMException('timed out', 'TimeoutError'); }, 504],
-    [async () => { throw new Error('network'); }, 502],
-    [async () => new Response(JSON.stringify({ sources: [] })), 404]
-  ]) await withApp({ configured: true, fetchCore }, async base => assert.equal((await fetch(base + '/api/sources/movie/550')).status, expected));
+test('propagates resolver errors, timeouts and empty results', async () => {
+  const cases = [
+    [async () => { throw Object.assign(new Error('boom'), { diagnostics: [{ provider: 'flixhq', error: 'boom' }] }); }, 502, 'UPSTREAM_ERROR'],
+    [async () => { throw Object.assign(new Error('slow'), { name: 'TimeoutError' }); }, 504, 'RESOLVER_TIMEOUT'],
+    [async () => ({ provider: 'FlixHQ', headers: {}, sources: [], subtitles: [], diagnostics: [] }), 404, 'NO_SOURCES']
+  ];
+  for (const [resolve, status, code] of cases) await withApp({ resolver: { resolve, health: async () => true }, configured: true }, async base => {
+    const response = await fetch(base + '/api/sources/movie/550');
+    assert.equal(response.status, status);
+    assert.equal((await response.json()).error.code, code);
+  });
 });
 test('tokens reject tampering, expiration and unsigned media requests', async () => {
   const tokens = createTokens('secret');
@@ -90,8 +131,4 @@ test('iframe routes, local HLS asset, media range delivery and CSP', async () =>
     assert.equal(range.status, 206); assert.equal((await range.arrayBuffer()).byteLength, 100);
     assert.equal((await fetch(base + '/v1/proxy?data=whatever')).status, 404);
   });
-});
-test('OMSS proxy URLs support double-encoded data', () => {
-  const value = JSON.stringify({ url: 'https://media.example/x', headers: {} });
-  assert.equal(unwrapSource('/v1/proxy?data=' + encodeURIComponent(encodeURIComponent(value))).url, 'https://media.example/x');
 });
