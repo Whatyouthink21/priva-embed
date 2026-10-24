@@ -402,9 +402,14 @@
 
     const total = state.providers.reduce((sum, entry) => sum + entry.streams.length, 0);
     if (!total) {
+      const reasons = state.providers
+        .filter((entry) => !entry.streams.length && entry.message)
+        .map((entry) => `${entry.name}: ${entry.message}`);
       showError(
         "No sources available",
-        "Every source is empty for this title right now. Try again in a moment.",
+        reasons.length
+          ? reasons.join(" · ").slice(0, 260)
+          : "Every source is empty for this title right now. Try again in a moment.",
       );
       post("error", { message: "no_sources" });
       return;
@@ -452,12 +457,16 @@
           : provider.status === "error"
           ? "unavailable"
           : "no links";
+      // Say *why* it is empty; a silent "no links" is impossible to act on.
+      const reason = provider.streams.length ? "" : String(provider.message || "").slice(0, 120);
 
       button.innerHTML = `
         <span class="${dotClass}"></span>
         <span class="menu-item__body">
           <span class="menu-item__title">${esc(provider.name)}</span>
-          <span class="menu-item__sub">${statusText}</span>
+          <span class="menu-item__sub"${reason ? ` title="${esc(reason)}"` : ""}>${statusText}${
+            reason ? ` · ${esc(reason)}` : ""
+          }</span>
         </span>
         ${state.provider?.id === provider.id ? `<svg class="menu-item__check" viewBox="0 0 24 24">${ICONS.check}</svg>` : ""}
       `;

@@ -286,3 +286,50 @@ test("nova refuses ids that are not tmdb numbers without touching the network", 
   assert.deepEqual(await resolve({ tmdbId: "", type: "movie" }), []);
   assert.deepEqual(await resolve({ tmdbId: "tt0111161", type: "movie" }), []);
 });
+
+/* -------------------------------- bellamy --------------------------------- */
+
+test("bellamy reports why it is empty instead of a silent []", async () => {
+  const { describeFailure, resolveWith } = await import("../src/providers/bellamy.js");
+  const { HttpError } = await import("../src/lib/http.js");
+
+  assert.equal(describeFailure(new HttpError("forbidden", 403)), "HTTP 403");
+  assert.equal(describeFailure(new Error("fetch   failed")), "fetch failed");
+  assert.equal(describeFailure(undefined), "failed");
+
+  // Every extractor blocked: the caller must learn that, not get an empty list.
+  await assert.rejects(
+    () =>
+      resolveWith(
+        [
+          async () => {
+            throw new HttpError("forbidden", 403);
+          },
+          async () => {
+            throw new HttpError("too many requests", 429);
+          },
+        ],
+        { tmdbId: "550" },
+      ),
+    /All extractors failed \(source 1: HTTP 403, source 2: HTTP 429\)/,
+  );
+
+  // A hang is a different failure from an empty answer.
+  await assert.rejects(
+    () => resolveWith([() => new Promise(() => {})], { tmdbId: "550" }, { timeoutMs: 25 }),
+    /timed out/,
+  );
+
+  // One healthy extractor is enough, and a partial failure stays quiet.
+  const streams = await resolveWith(
+    [
+      async () => [{ url: "https://cdn.example.com/master.m3u8", type: "hls", quality: "1080" }],
+      async () => {
+        throw new HttpError("blocked", 403);
+      },
+    ],
+    { tmdbId: "550" },
+  );
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].server, "Bellamy");
+});

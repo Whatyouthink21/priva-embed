@@ -77,10 +77,57 @@ function normalize(streams) {
   return cleaned;
 }
 
+const EXTRACTORS = [extractCinejoy, extractMovy, extractVidstuck];
+
+/** One-line reason an extractor returned nothing, safe to show in the player. */
+export function describeFailure(error) {
+  const status = Number(error?.status);
+  if (status) return `HTTP ${status}`;
+  const message = String(error?.message || "").replace(/\s+/g, " ").trim();
+  return message ? message.slice(0, 60) : "failed";
+}
+
+/**
+ * Resolve through a fixed extractor list.
+ *
+ * Exported separately from `resolve` so the failure paths can be exercised
+ * without hitting the network — an engine that returns nothing used to be
+ * indistinguishable from one that was blocked, and the player only ever said
+ * "no links".
+ */
+export async function resolveWith(extractors, context, { timeoutMs = 26000 } = {}) {
+  const results = await withTimeout(
+    Promise.allSettled(extractors.map((extractor) => extractor(context))),
+    timeoutMs,
+    null,
+  );
+
+  if (!results) {
+    throw new Error(`Extractors timed out after ${Math.round(timeoutMs / 1000)}s`);
+  }
+
+  const streams = [];
+  const failures = [];
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      streams.push(...(Array.isArray(result.value) ? result.value : []));
+    } else {
+      // Never name the upstream: only the codename is public.
+      failures.push(`source ${index + 1}: ${describeFailure(result.reason)}`);
+    }
+  });
+
+  const cleaned = normalize(streams);
+  if (!cleaned.length && failures.length) {
+    throw new Error(`All extractors failed (${failures.join(", ")})`);
+  }
+  return cleaned;
+}
+
 export async function resolve({ tmdbId, imdbId, title, year, type, season = 1, episode = 1, signal }) {
   if (!tmdbId) return [];
 
-  const context = {
+  return resolveWith(EXTRACTORS, {
     tmdbId: String(tmdbId),
     imdbId,
     title,
@@ -89,17 +136,5 @@ export async function resolve({ tmdbId, imdbId, title, year, type, season = 1, e
     season: Number(season) || 1,
     episode: Number(episode) || 1,
     signal,
-  };
-
-  const work = Promise.allSettled([
-    extractCinejoy(context),
-    extractMovy(context),
-    extractVidstuck(context),
-  ]);
-
-  const results = await withTimeout(work, 26000, []);
-  const streams = results.flatMap((result) =>
-    result.status === "fulfilled" ? result.value : [],
-  );
-  return normalize(streams);
+  });
 }
