@@ -191,7 +191,7 @@ test("demo movie player boots, picks a provider and attaches playback", async ()
     const names = [...document.querySelectorAll("#providerList .menu-item__title")].map((el) =>
       el.textContent.trim(),
     );
-    assert.deepEqual(names, ["Clarke", "Bellamy", "Raven"], "provider codenames only");
+    assert.deepEqual(names, ["Clarke", "Bellamy", "Nova"], "provider codenames only");
 
     assert.equal(document.getElementById("providerBtnLabel").textContent, "Clarke");
     assert.match(document.querySelector(".topbar__title").textContent, /Fight Club/);
@@ -216,7 +216,7 @@ test("provider menu switches sources without a reload", async () => {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
 
-    assert.equal(document.getElementById("providerBtnLabel").textContent, "Raven");
+    assert.equal(document.getElementById("providerBtnLabel").textContent, "Nova");
     assert.ok(dom.window.__hlsInstances.length > before, "a new hls instance started");
     assert.equal(dom.window.__hlsInstances[before - 1].destroyed, true, "old hls torn down");
 
@@ -249,10 +249,10 @@ test("tv player renders episode chrome and drawer", async () => {
 
 test("query options are honoured (theme, provider)", async () => {
   await withServer(async (base) => {
-    const dom = await loadPlayer(`${base}/player/550?demo=1&provider=raven&theme=ff5c7a`);
+    const dom = await loadPlayer(`${base}/player/550?demo=1&provider=nova&theme=ff5c7a`);
     const { document, getComputedStyle } = dom.window;
 
-    assert.equal(document.getElementById("providerBtnLabel").textContent, "Raven");
+    assert.equal(document.getElementById("providerBtnLabel").textContent, "Nova");
     const primary = document.documentElement.style.getPropertyValue("--primary");
     assert.equal(primary.trim(), "#ff5c7a");
     assert.ok(getComputedStyle(document.documentElement).length >= 0);
@@ -441,14 +441,14 @@ const mp4Sources = (overrides = {}) => ({
   skip: [],
   providers: [
     {
-      id: "raven",
-      name: "Raven",
+      id: "nova",
+      name: "Nova",
       status: "ok",
       ms: 900,
       streams: [
         {
-          id: "raven-0",
-          server: "Raven",
+          id: "nova-0",
+          server: "Nova",
           label: "720p",
           type: "mp4",
           quality: "720",

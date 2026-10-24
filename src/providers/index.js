@@ -1,6 +1,6 @@
 import * as clarke from "./clarke.js";
 import * as bellamy from "./bellamy.js";
-import * as raven from "./raven.js";
+import * as nova from "./nova.js";
 
 /**
  * Provider registry. Only codenames are ever exposed to the browser.
@@ -8,10 +8,10 @@ import * as raven from "./raven.js";
 export const PROVIDERS = {
   clarke: { id: clarke.id, name: clarke.name, resolve: clarke.resolve },
   bellamy: { id: bellamy.id, name: bellamy.name, resolve: bellamy.resolve },
-  raven: { id: raven.id, name: raven.name, resolve: raven.resolve },
+  nova: { id: nova.id, name: nova.name, resolve: nova.resolve },
 };
 
-export const PROVIDER_ORDER = ["clarke", "bellamy", "raven"];
+export const PROVIDER_ORDER = ["clarke", "bellamy", "nova"];
 
 export function providerList() {
   return PROVIDER_ORDER.map((key) => ({ id: key, name: PROVIDERS[key].name }));

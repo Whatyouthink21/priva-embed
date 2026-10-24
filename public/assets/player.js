@@ -290,8 +290,8 @@
 
   /* -------------------------------- sources -------------------------------- */
 
-  const PROVIDER_NAMES = { clarke: "Clarke", bellamy: "Bellamy", raven: "Raven" };
-  const PROVIDER_ORDER = ["clarke", "bellamy", "raven"];
+  const PROVIDER_NAMES = { clarke: "Clarke", bellamy: "Bellamy", nova: "Nova" };
+  const PROVIDER_ORDER = ["clarke", "bellamy", "nova"];
   let sourceRequest = null;
   let selectionMade = false;
 

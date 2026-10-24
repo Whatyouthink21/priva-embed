@@ -7,7 +7,7 @@ server from three source engines, which are only ever exposed under their codena
 | -------- | ------ |
 | **Clarke** | castle |
 | **Bellamy** | autoembed (multi-extractor) |
-| **Raven** | movieboxweb |
+| **Nova** | 1flex (Vidzee edge + Viduki backends) |
 
 ## Embed it
 
@@ -54,7 +54,7 @@ Responsive 16:9 wrapper:
 | `autoNext` | `1` | Auto-play the next episode |
 | `title` | – | Show this title instead of the TMDB one |
 | `poster` | – | Custom poster/backdrop image |
-| `provider` | `auto` | `clarke`, `bellamy`, `raven` or `auto` |
+| `provider` | `auto` | `clarke`, `bellamy`, `nova` or `auto` |
 | `muted` | `1` | Start muted (helps browser autoplay policies) |
 | `start` | `0` | Start offset in seconds |
 | `lang` | – | Preferred subtitle language (ISO-639-1) |
@@ -89,7 +89,7 @@ Hover or tap the frame to bring the chrome back while playing; it stays pinned w
 paused. Menus in the bottom bar (subtitles, settings) open upward into the player, so
 they never fall outside a short iframe. The bottom bar has play/pause, −10s / +10s, mute, a volume slider, the
 scrubber, time, subtitles, settings (speed + subtitles), picture-in-picture and
-fullscreen. The top bar has back, the sources pill (Clarke / Bellamy / Raven) and the
+fullscreen. The top bar has back, the sources pill (Clarke / Bellamy / Nova) and the
 quality pill; on TV the episode pill opens the drawer.
 
 ## Provider status
@@ -98,9 +98,9 @@ quality pill; on TV the episode pill opens the drawer.
 | ------ | ------ |
 | **Clarke** | Working. Encrypted-envelope API; verified live across movies and TV. |
 | **Bellamy** | Working. Fans out to the three sub-extractors and merges links. |
-| **Raven** | Resolves links. Its media CDN answers **426/429** to datacenter IPs (GitHub Actions, Render), so its mp4 links are handed to the browser to play **directly from the viewer's IP** — see below. |
+| **Nova** | Resolves links. Viduki needs a proof-of-work handshake and a WASM-sealed session before it answers, so the first lookup of a title is slower than the others; results are cached for 2 minutes. Subtitles are real VTT files. |
 
-The player tries Clarke first, then Bellamy, then Raven, and only moves on when a link
+The player tries Clarke first, then Bellamy, then Nova, and only moves on when a link
 actually fails — so a dead engine never blocks playback.
 
 ### Direct playback vs the relay
@@ -110,12 +110,24 @@ HLS manifests and subtitles always go through the same-origin relay (`/api/strea
 send. Progressive **mp4** streams are different: a `<video src>` needs no CORS, so
 `/api/sources` also returns a `direct` URL for them and the player tries that first.
 
-That is what makes Raven usable. Its CDN rejects our server's datacenter IP with
-`426`, but it serves the same URL to a normal viewer's IP — which is exactly how the
-Vega app plays it, in the browser rather than on a server. If the direct attempt
-fails or stalls for 9s, the player silently retries through the relay, and only then
-moves to the next provider. `node scripts/provider-check.mjs` reports `proxy-ok` or
-`direct` per provider so the two paths stay distinguishable.
+Nova's Viduki `Sherry` backend is the usual mp4 source, so this path matters here:
+its CDN is happier with a viewer's IP than with a datacenter one. If the direct
+attempt fails or stalls for 9s, the player silently retries through the relay, and
+only then moves to the next source. `node scripts/provider-check.mjs` reports
+`proxy-ok` or `direct` per provider so the two paths stay distinguishable.
+
+### Nova's sealed WASM
+
+Half of the 1flex engine is encrypted. Viduki hands out an Altcha proof-of-work
+challenge, then a session nonce, then a pepper key and a per-title envelope — both of
+which are only unwrappable by the client's WASM module. That module is pinned as a
+base64 constant in `src/providers/oneflex/blobs.js` (export names in
+`src/providers/oneflex/crypto.js`) and loaded lazily on first use.
+
+If Viduki rebuilds, the export names (`_qViy`, `_G3J7`, …) and the binary both change.
+`npm test` compiles the pinned blob and asserts every export still exists, so a stale
+pin fails in CI instead of silently returning no sources. The Vidzee edge is different:
+it accepts `e=0` and answers plain JSON, so no crypto is involved there.
 
 ## Preview mode (`?demo=1`)
 
@@ -174,7 +186,7 @@ npm test           # unit + proxy + jsdom player tests
 
 1. The browser asks `/api/sources` for a TMDB id.
 2. The server resolves metadata from TMDB, then queries the three engines in
-   parallel (Clarke, Bellamy, Raven) with a per-provider timeout.
+   parallel (Clarke, Bellamy, Nova) with a per-provider timeout.
 3. Streams, keys and subtitles are returned as same-origin proxy URLs
    (`/api/stream`, `/api/subtitle`) so HLS playlists, AES keys, segments and SRT
    tracks all load without CORS or `Referer` problems.

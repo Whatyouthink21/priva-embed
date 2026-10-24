@@ -164,8 +164,8 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   const { publicStream } = await import("../src/routes/api.js");
 
   const mp4 = publicStream({
-    id: "raven-0",
-    server: "Raven",
+    id: "nova-0",
+    server: "Nova",
     label: "720p",
     type: "mp4",
     quality: "720",
@@ -187,24 +187,102 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   assert.match(hls.url, /^\/api\/stream\?u=/);
 });
 
-test("raven reports a throttled session instead of a silent empty list", async () => {
-  const { playbackLimited } = await import("../src/providers/raven.js");
+test("a fan-out of requests does not pile listeners onto the caller's signal", async () => {
+  const { combineSignals } = await import("../src/lib/http.js");
 
-  // v2.5: `data.limited` with no usable stream means the session is throttled.
-  assert.equal(playbackLimited({ code: 0, data: { limited: true, streams: [] } }), true);
+  // While in flight the caller's abort must propagate.
+  const live = new AbortController();
+  const inFlight = combineSignals(live.signal, 5000);
+  live.abort(new Error("gone"));
+  assert.equal(inFlight.signal.aborted, true, "abort propagates while in flight");
+  inFlight.done();
 
-  // A limited flag alongside real streams is still playable.
-  assert.equal(
-    playbackLimited({
-      code: 0,
-      data: { limited: true, streams: [{ url: "https://cdn/x.mp4", vipLocked: false }] },
-    }),
-    false,
+  // One provider signal serves every upstream call an engine makes (Nova: nine at
+  // once). Node warns past ten listeners, so the composition must not add any.
+  const warnings = [];
+  const onWarning = (warning) => warnings.push(warning);
+  process.on("warning", onWarning);
+  try {
+    const shared = new AbortController();
+    const handles = Array.from({ length: 25 }, () => combineSignals(shared.signal, 60_000));
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const handle of handles) handle.done();
+  } finally {
+    process.off("warning", onWarning);
+  }
+  assert.deepEqual(
+    warnings.filter((warning) => warning.name === "MaxListenersExceededWarning"),
+    [],
+    "no listener leak on the shared provider signal",
   );
 
-  // A normal response is not limited.
-  assert.equal(
-    playbackLimited({ code: 0, data: { streams: [{ url: "https://cdn/x.mp4" }] } }),
-    false,
-  );
+  // And the fallback path (Node without AbortSignal.any) must detach as well.
+  const native = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true, writable: true });
+  try {
+    let attached = 0;
+    let detached = 0;
+    const parent = {
+      aborted: false,
+      reason: undefined,
+      addEventListener() {
+        attached += 1;
+      },
+      removeEventListener() {
+        detached += 1;
+      },
+    };
+    const handle = combineSignals(parent, 5000);
+    handle.done();
+    assert.equal(attached, 1, "the fallback listens while in flight");
+    assert.equal(detached, 1, "and stops listening once the request settles");
+  } finally {
+    Object.defineProperty(AbortSignal, "any", { value: native, configurable: true, writable: true });
+  }
+});
+
+/* ---------------------------------- nova ---------------------------------- */
+
+test("nova ships an intact wasm module with the exports the handshake needs", async () => {
+  const { VIDUKI_WASM_B64 } = await import("../src/providers/oneflex/blobs.js");
+  const { VIDUKI_EXPORTS } = await import("../src/providers/oneflex/crypto.js");
+
+  const bytes = Buffer.from(VIDUKI_WASM_B64, "base64");
+  assert.equal(bytes.subarray(0, 4).toString("hex"), "0061736d", "a real wasm binary");
+  await WebAssembly.compile(bytes); // throws if the blob was truncated or corrupted
+
+  const { instance } = await WebAssembly.instantiate(bytes, { env: { abort() {} } });
+  for (const [role, name] of Object.entries(VIDUKI_EXPORTS)) {
+    assert.equal(typeof instance.exports[name], "function", `${role} export ${name} exists`);
+  }
+});
+
+test("nova solves altcha proof-of-work challenges", async () => {
+  const { sha256Hex, solveAltcha } = await import("../src/providers/oneflex/crypto.js");
+
+  const salt = "5ba1c3e2";
+  const answer = 4242;
+  const payload = solveAltcha({
+    algorithm: "SHA-256",
+    challenge: sha256Hex(salt + answer),
+    salt,
+    signature: "s1gn4ture",
+    maxnumber: 100000,
+  });
+
+  assert.ok(payload, "a solution was found");
+  const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+  assert.equal(decoded.number, answer);
+  assert.equal(decoded.signature, "s1gn4ture");
+  assert.equal(sha256Hex(salt + decoded.number), decoded.challenge);
+  assert.ok(Number.isFinite(decoded.took));
+
+  assert.equal(solveAltcha({ salt, challenge: sha256Hex("no-match"), maxnumber: 50 }), null);
+  assert.equal(solveAltcha(null), null);
+});
+
+test("nova refuses ids that are not tmdb numbers without touching the network", async () => {
+  const { resolve } = await import("../src/providers/nova.js");
+  assert.deepEqual(await resolve({ tmdbId: "", type: "movie" }), []);
+  assert.deepEqual(await resolve({ tmdbId: "tt0111161", type: "movie" }), []);
 });

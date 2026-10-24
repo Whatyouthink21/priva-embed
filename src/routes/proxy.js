@@ -156,9 +156,13 @@ router.get("/subtitle", asyncRoute(async (req, res) => {
     return res.status(400).json({ error: "invalid_subtitle_url" });
   }
 
+  // Subtitle CDNs gate on Referer just like the media CDNs do (Nova's tracks 403
+  // without it), so carry the provider's headers through the same token.
+  const headers = decodeHeaders(req.query.h);
+
   try {
     const upstream = await fetch(target, {
-      headers: { "User-Agent": UA, Accept: "*/*" },
+      headers: { "User-Agent": headers["User-Agent"] || UA, Accept: "*/*", ...headers },
       redirect: "follow",
     });
     if (!upstream.ok) return res.status(502).end();

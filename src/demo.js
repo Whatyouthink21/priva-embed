@@ -99,7 +99,7 @@ export function demoSources({ type, season, episode }) {
   const providers = [
     { id: "clarke", name: "Clarke", offset: 0 },
     { id: "bellamy", name: "Bellamy", offset: 1 },
-    { id: "raven", name: "Raven", offset: 2 },
+    { id: "nova", name: "Nova", offset: 2 },
   ];
 
   return {
