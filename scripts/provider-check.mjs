@@ -149,6 +149,30 @@ async function probeStream(base, stream) {
   }
 }
 
+/** Fetch the first subtitle through the same relay the <track> element uses. */
+async function probeSubtitle(base, stream) {
+  const subtitle = (stream.subtitles || [])[0];
+  if (!subtitle?.url) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(`${base}${subtitle.url}`, { signal: controller.signal });
+    const body = await response.text();
+    return {
+      count: stream.subtitles.length,
+      language: subtitle.language || "",
+      ok: response.ok && /^\s*WEBVTT/i.test(body),
+      status: response.status,
+      bytes: body.length,
+      firstLine: body.split("\n")[0].slice(0, 40),
+    };
+  } catch (error) {
+    return { count: stream.subtitles.length, ok: false, error: error?.message || "probe failed" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function resolve(base, target, provider) {
   const params = new URLSearchParams({
     type: target.type,
@@ -205,6 +229,7 @@ for (const target of targets) {
     if (result.first?.direct) {
       directProbe = await probeDirect(result.first.direct);
     }
+    const subtitleProbe = result.first ? await probeSubtitle(base, result.first) : null;
     const ok = Boolean(probe?.ok);
     const directOk = Boolean(directProbe?.reachable);
     if (ok || directOk) titlePlayable = true;
@@ -223,6 +248,7 @@ for (const target of targets) {
       probe,
       direct: result.first?.direct || "",
       directProbe,
+      subtitleProbe,
       matrix,
     });
     console.log(
@@ -236,6 +262,7 @@ for (const target of targets) {
         probe,
         direct: result.first?.direct ? "yes" : "",
         directProbe,
+        subtitles: subtitleProbe,
         matrix,
         error: result.error,
         matchedTitle: result.title,
@@ -255,6 +282,10 @@ for (const row of rows) {
       row.status.padEnd(12),
       `${String(row.streams).padStart(2)} links`.padEnd(9),
       row.probe?.ok ? "proxy-ok" : row.direct && row.directProbe?.reachable ? "direct-only" : "no",
+      (row.subtitleProbe
+        ? `${row.subtitleProbe.count} subs ${row.subtitleProbe.ok ? "ok" : "FAIL"}`
+        : "no subs"
+      ).padEnd(12),
       row.error ? `(${row.error})` : "",
     ].join(" "),
   );
@@ -262,6 +293,7 @@ for (const row of rows) {
 console.log(`\nplayable titles: ${playableTitles}/${targets.length}`);
 console.log("proxy-ok  = the server relay fetched the media");
 console.log("direct    = only the raw CDN URL worked; the browser plays it, the server cannot");
+console.log("N subs ok = the relay served N tracks and the first one starts with WEBVTT");
 
 server.closeAllConnections?.();
 server.close();

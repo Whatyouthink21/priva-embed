@@ -187,6 +187,25 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   assert.match(hls.url, /^\/api\/stream\?u=/);
 });
 
+test("a finished request stops listening to the caller's abort signal", async () => {
+  const { combineSignals } = await import("../src/lib/http.js");
+
+  // While in flight, the caller's abort must propagate.
+  const live = new AbortController();
+  const inFlight = combineSignals(live.signal, 5000);
+  live.abort(new Error("gone"));
+  assert.equal(inFlight.signal.aborted, true, "abort propagates while in flight");
+  inFlight.done();
+
+  // Once settled, the listener is detached — otherwise a fan-out engine leaks one
+  // listener per finished request onto the shared provider signal.
+  const settled = new AbortController();
+  const finished = combineSignals(settled.signal, 5000);
+  finished.done();
+  settled.abort(new Error("gone"));
+  assert.equal(finished.signal.aborted, false, "no listener left behind");
+});
+
 /* ---------------------------------- nova ---------------------------------- */
 
 test("nova ships an intact wasm module with the exports the handshake needs", async () => {

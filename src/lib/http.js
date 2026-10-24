@@ -12,14 +12,35 @@ export class HttpError extends Error {
   }
 }
 
-function combineSignals(signal, timeoutMs) {
+/**
+ * Per-request abort signals layered on top of the caller's.
+ *
+ * Engines fan out (Nova fires eight upstream calls on one provider signal), so the
+ * listener must come back off when the request settles — otherwise every finished
+ * request leaves a listener on the shared signal and Node starts warning about it.
+ */
+export function combineSignals(signal, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
+  let detach = null;
+
   if (signal) {
-    if (signal.aborted) controller.abort(signal.reason);
-    else signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+    } else {
+      const onAbort = () => controller.abort(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      detach = () => signal.removeEventListener("abort", onAbort);
+    }
   }
-  return { signal: controller.signal, done: () => clearTimeout(timer) };
+
+  return {
+    signal: controller.signal,
+    done: () => {
+      clearTimeout(timer);
+      detach?.();
+    },
+  };
 }
 
 /**
