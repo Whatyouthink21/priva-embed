@@ -4,11 +4,12 @@ import http from "node:http";
 import { once } from "node:events";
 
 import { createApp } from "../src/app.js";
-import { b64url } from "../src/lib/tokens.js";
+import { b64url, encodeHeaders } from "../src/lib/tokens.js";
 
 const SEGMENT = Buffer.from("fake-ts-segment-bytes");
 
 async function startUpstream() {
+  const seen = {};
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (url.pathname === "/hls/master.m3u8") {
@@ -31,6 +32,7 @@ async function startUpstream() {
       return;
     }
     if (url.pathname === "/subs.srt") {
+      seen.subtitleReferer = req.headers.referer;
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("1\n00:00:01,000 --> 00:00:02,000\nHello\n");
       return;
@@ -39,11 +41,11 @@ async function startUpstream() {
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
-  return { server, port: server.address().port };
+  return { server, seen, port: server.address().port };
 }
 
 test("stream proxy rewrites manifests, streams segments and converts subtitles", async (t) => {
-  const { server: upstream, port } = await startUpstream();
+  const { server: upstream, seen, port } = await startUpstream();
   const app = createApp();
   const listener = app.listen(0, "127.0.0.1");
   await once(listener, "listening");
@@ -80,6 +82,13 @@ test("stream proxy rewrites manifests, streams segments and converts subtitles",
   const vtt = await subtitleResponse.text();
   assert.ok(vtt.startsWith("WEBVTT"));
   assert.ok(vtt.includes("00:00:01.000 --> 00:00:02.000"));
+
+  // 4. subtitles carry the provider's headers (Nova's CDN 403s without Referer)
+  const token = encodeHeaders({ Referer: "https://player.example/", Origin: "https://player.example" });
+  const withHeaders = await fetch(`${base}/api/subtitle?u=${b64url(subtitleUrl)}&h=${token}`);
+  assert.equal(withHeaders.status, 200);
+  assert.ok((await withHeaders.text()).startsWith("WEBVTT"));
+  assert.equal(seen.subtitleReferer, "https://player.example/", "Referer reached the upstream");
 });
 
 test("player, docs and api endpoints render", async (t) => {

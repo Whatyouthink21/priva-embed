@@ -17,7 +17,8 @@ function streamProxyUrl(stream) {
 }
 
 function subtitleProxyUrl(subtitle) {
-  return `/api/subtitle?u=${b64url(subtitle.url)}`;
+  const token = encodeHeaders(subtitle.headers);
+  return `/api/subtitle?u=${b64url(subtitle.url)}${token ? `&h=${token}` : ""}`;
 }
 
 /**

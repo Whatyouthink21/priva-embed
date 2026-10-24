@@ -15,11 +15,20 @@ export class HttpError extends Error {
 /**
  * Per-request abort signals layered on top of the caller's.
  *
- * Engines fan out (Nova fires eight upstream calls on one provider signal), so the
- * listener must come back off when the request settles — otherwise every finished
- * request leaves a listener on the shared signal and Node starts warning about it.
+ * Engines fan out (Nova fires nine upstream calls on one provider signal), so this
+ * must not register a listener per request: Node warns past ten listeners and the
+ * peak concurrency alone crosses that. AbortSignal.any composes natively; the
+ * listener fallback below detaches itself when the request settles.
  */
 export function combineSignals(signal, timeoutMs) {
+  if (typeof AbortSignal.timeout === "function") {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    if (!signal) return { signal: timeout, done: () => {} };
+    if (typeof AbortSignal.any === "function") {
+      return { signal: AbortSignal.any([signal, timeout]), done: () => {} };
+    }
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
   let detach = null;

@@ -187,23 +187,58 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   assert.match(hls.url, /^\/api\/stream\?u=/);
 });
 
-test("a finished request stops listening to the caller's abort signal", async () => {
+test("a fan-out of requests does not pile listeners onto the caller's signal", async () => {
   const { combineSignals } = await import("../src/lib/http.js");
 
-  // While in flight, the caller's abort must propagate.
+  // While in flight the caller's abort must propagate.
   const live = new AbortController();
   const inFlight = combineSignals(live.signal, 5000);
   live.abort(new Error("gone"));
   assert.equal(inFlight.signal.aborted, true, "abort propagates while in flight");
   inFlight.done();
 
-  // Once settled, the listener is detached — otherwise a fan-out engine leaks one
-  // listener per finished request onto the shared provider signal.
-  const settled = new AbortController();
-  const finished = combineSignals(settled.signal, 5000);
-  finished.done();
-  settled.abort(new Error("gone"));
-  assert.equal(finished.signal.aborted, false, "no listener left behind");
+  // One provider signal serves every upstream call an engine makes (Nova: nine at
+  // once). Node warns past ten listeners, so the composition must not add any.
+  const warnings = [];
+  const onWarning = (warning) => warnings.push(warning);
+  process.on("warning", onWarning);
+  try {
+    const shared = new AbortController();
+    const handles = Array.from({ length: 25 }, () => combineSignals(shared.signal, 60_000));
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const handle of handles) handle.done();
+  } finally {
+    process.off("warning", onWarning);
+  }
+  assert.deepEqual(
+    warnings.filter((warning) => warning.name === "MaxListenersExceededWarning"),
+    [],
+    "no listener leak on the shared provider signal",
+  );
+
+  // And the fallback path (Node without AbortSignal.any) must detach as well.
+  const native = AbortSignal.any;
+  Object.defineProperty(AbortSignal, "any", { value: undefined, configurable: true, writable: true });
+  try {
+    let attached = 0;
+    let detached = 0;
+    const parent = {
+      aborted: false,
+      reason: undefined,
+      addEventListener() {
+        attached += 1;
+      },
+      removeEventListener() {
+        detached += 1;
+      },
+    };
+    const handle = combineSignals(parent, 5000);
+    handle.done();
+    assert.equal(attached, 1, "the fallback listens while in flight");
+    assert.equal(detached, 1, "and stops listening once the request settles");
+  } finally {
+    Object.defineProperty(AbortSignal, "any", { value: native, configurable: true, writable: true });
+  }
 });
 
 /* ---------------------------------- nova ---------------------------------- */

@@ -101,6 +101,8 @@ async function subtitles({ tmdbId, type, season, episode, signal }) {
         title: entry.label || "Subtitle",
         language: languageOf(entry.label),
         url: entry.file,
+        // The subtitle CDN 403s without the player origin.
+        headers: playerHeaders,
       }))
       .slice(0, 24);
   } catch {
