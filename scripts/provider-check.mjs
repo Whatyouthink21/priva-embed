@@ -183,7 +183,7 @@ for (const target of targets) {
 
     // The API only exposes proxy paths; recover the real upstream for diagnosis.
     let matrix = null;
-    if (result.first && !ok && [426, 403, 401, 451].includes(Number(probe?.status))) {
+    if (result.first && !ok) {
       const upstream = decodeTarget(result.first.url);
       if (upstream) matrix = await headerMatrix(upstream, result.first.headers || {});
     }
