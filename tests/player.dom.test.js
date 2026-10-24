@@ -284,7 +284,8 @@ test("docs configurator rewrites the preview url", async () => {
     const { document } = dom.window;
     assert.match(
       document.getElementById("previewFrame").getAttribute("src"),
-      /^(?:https?:\/\/[^/]+)?\/player\/550\?demo=1$/,
+      /^(?:https?:\/\/[^/]+)?\/player\/550$/,
+      "preview must not default to demo mode",
     );
 
     const tmdb = document.getElementById("tmdbInput");
@@ -297,8 +298,40 @@ test("docs configurator rewrites the preview url", async () => {
     await new Promise((resolve) => setTimeout(resolve, 700));
 
     const src = document.getElementById("previewFrame").getAttribute("src");
-    assert.match(src, /\/player\/1396\/1\/1\?demo=1$/);
+    assert.match(src, /\/player\/1396\/1\/1$/);
+    assert.ok(!src.includes("demo=1"), "copied URLs never carry demo=1 unless toggled");
     assert.match(document.getElementById("previewUrl").textContent, /^\/player\/1396/);
+
+    dom.window.close();
+  });
+});
+
+test("control bar is visible and interactive once playback is ready", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550?demo=1`);
+    const { document, getComputedStyle } = dom.window;
+
+    // Regression: a permanent `loading` class on <body> kept the bottom bar at
+    // pointer-events:none forever, so pause/volume/seek were unclickable.
+    assert.equal(
+      document.body.classList.contains("loading"),
+      false,
+      "body must leave the loading class",
+    );
+    assert.notEqual(document.body.dataset.state, "loading");
+
+    const bar = document.getElementById("bottombar");
+    const style = getComputedStyle(bar);
+    assert.notEqual(style.pointerEvents, "none", "bottom bar must accept clicks");
+    assert.notEqual(style.opacity, "0", "bottom bar must be visible");
+
+    // Every transport control the user needs must be present and hittable.
+    for (const id of ["playBtn", "back10", "fwd10", "muteBtn", "volumeSlider", "scrubber", "fullscreenBtn"]) {
+      const el = document.getElementById(id);
+      assert.ok(el, `#${id} exists`);
+      assert.notEqual(getComputedStyle(el).pointerEvents, "none", `#${id} is clickable`);
+      assert.equal(el.closest("#bottombar"), bar, `#${id} lives in the bottom bar`);
+    }
 
     dom.window.close();
   });

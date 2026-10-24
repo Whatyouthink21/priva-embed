@@ -22,6 +22,16 @@ const DEFAULT_TARGETS = [
 
 const PROVIDERS = ["clarke", "bellamy", "raven"];
 
+/** /api/stream?u=<base64url> -> the upstream URL */
+function decodeTarget(proxyPath) {
+  try {
+    const u = new URL(proxyPath, "http://x").searchParams.get("u");
+    return u ? Buffer.from(u.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") : "";
+  } catch {
+    return "";
+  }
+}
+
 function parseTargets(argv) {
   if (!argv.length) return DEFAULT_TARGETS;
   return argv.map((raw) => {
@@ -34,6 +44,66 @@ function parseTargets(argv) {
       episode: Number(episode) || 1,
     };
   });
+}
+
+/**
+ * When the proxy fails, ask the upstream directly with a few header sets so we
+ * can see which one the CDN actually accepts (some return 426 to browsers but
+ * serve a plain client, and vice versa).
+ */
+async function headerMatrix(url, streamHeaders = {}) {
+  const baseUrl = (() => {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return "";
+    }
+  })();
+  const variants = [
+    ["vega-headers", { ...streamHeaders }],
+    ["none", {}],
+    [
+      "referer-only",
+      { Referer: `${baseUrl}/`, "User-Agent": streamHeaders["User-Agent"] || "okhttp/4.9.0" },
+    ],
+    [
+      "okhttp",
+      { "User-Agent": "okhttp/4.9.0", Referer: `${baseUrl}/` },
+    ],
+    [
+      "no-origin",
+      {
+        Referer: streamHeaders.Referer || `${baseUrl}/`,
+        "User-Agent": streamHeaders["User-Agent"] || "okhttp/4.9.0",
+      },
+    ],
+    [
+      "range",
+      { ...streamHeaders, Range: "bytes=0-1023" },
+    ],
+  ];
+
+  const results = [];
+  for (const [label, headers] of variants) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    try {
+      const response = await fetch(url, { headers, signal: controller.signal });
+      const buf = await response.arrayBuffer();
+      results.push({
+        label,
+        status: response.status,
+        bytes: buf.byteLength,
+        type: response.headers.get("content-type") || "",
+      });
+      if (response.ok) break;
+    } catch (error) {
+      results.push({ label, status: "err", error: error?.message });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return results;
 }
 
 async function probeStream(base, stream) {
@@ -110,7 +180,15 @@ for (const target of targets) {
     if (result.first) probe = await probeStream(base, result.first);
     const ok = Boolean(probe?.ok);
     if (ok) titlePlayable = true;
-    rows.push({ label, provider: result.provider, ...result, probe });
+
+    // The API only exposes proxy paths; recover the real upstream for diagnosis.
+    let matrix = null;
+    if (result.first && !ok) {
+      const upstream = decodeTarget(result.first.url);
+      if (upstream) matrix = await headerMatrix(upstream, result.first.headers || {});
+    }
+
+    rows.push({ label, provider: result.provider, ...result, probe, matrix });
     console.log(
       `RESULT ${JSON.stringify({
         title: label,
@@ -120,6 +198,7 @@ for (const target of targets) {
         streams: result.streams,
         kinds: result.kinds,
         probe,
+        matrix,
         error: result.error,
         matchedTitle: result.title,
       })}`,

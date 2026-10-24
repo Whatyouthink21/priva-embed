@@ -25,7 +25,7 @@
     autoNext: true,
     title: "",
     theme: "#ffffff",
-    demo: true,
+    demo: false,
   };
 
   const fields = {

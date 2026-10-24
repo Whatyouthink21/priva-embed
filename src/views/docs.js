@@ -66,7 +66,7 @@ export function renderDocs({ baseUrl }) {
     <div class="preview__grid">
       <div class="preview__frame">
         <div class="frame">
-          <iframe id="previewFrame" src="/player/550?demo=1" allowfullscreen allow="encrypted-media; autoplay; picture-in-picture; fullscreen" loading="lazy"></iframe>
+          <iframe id="previewFrame" src="/player/550" allowfullscreen allow="encrypted-media; autoplay; picture-in-picture; fullscreen" loading="lazy"></iframe>
         </div>
         <div class="preview__url">
           <code id="previewUrl">${origin}/player/550?demo=1</code>
@@ -109,7 +109,7 @@ export function renderDocs({ baseUrl }) {
         </label>
         <label class="switch-row">
           <span>demo stream</span>
-          <input type="checkbox" id="optDemo" checked />
+          <input type="checkbox" id="optDemo" />
         </label>
 
         <button class="btn btn--primary" type="button" id="previewBtn">Preview</button>

@@ -83,6 +83,25 @@ iframe.contentWindow.postMessage({ source: "priva-parent", command: "seek", valu
 iframe.contentWindow.postMessage({ source: "priva-parent", command: "setProvider", value: "bellamy" }, "*");
 ```
 
+## Player controls
+
+Hover or tap the frame to bring the chrome back while playing; it stays pinned while
+paused. The bottom bar has play/pause, −10s / +10s, mute, a volume slider, the
+scrubber, time, subtitles, settings (speed + subtitles), picture-in-picture and
+fullscreen. The top bar has back, the sources pill (Clarke / Bellamy / Raven) and the
+quality pill; on TV the episode pill opens the drawer.
+
+## Provider status
+
+| Engine | Status |
+| ------ | ------ |
+| **Clarke** | Working. Encrypted-envelope API; verified live across movies and TV. |
+| **Bellamy** | Working. Fans out to the three sub-extractors and merges links. |
+| **Raven** | Resolves links, but the media CDN answers **426/429** to datacenter IPs. Same on GitHub Actions and Render, so its links usually will not play from a hosted server. The player detects the failure and falls through to Clarke/Bellamy. |
+
+The player tries Clarke first, then Bellamy, then Raven, and only moves on when a link
+actually fails — so a dead engine never blocks playback.
+
 ## Preview mode (`?demo=1`)
 
 Add `demo=1` to any player URL to run the full UI against sample metadata and public
@@ -93,8 +112,8 @@ test streams — no provider or TMDB traffic:
 /player/1396/2/3?demo=1       Breaking Bad S2E3
 ```
 
-The docs page (`/embed`) has a **demo** toggle in the live configurator and previews
-with it enabled by default, so the UI can be reviewed before going live.
+Demo mode is **opt-in**: the docs preview and every copied snippet use real providers.
+Tick the **demo** switch in the configurator to append `demo=1` manually.
 
 ## Deploy to Render
 

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import http from "node:http";
 
 import { deriveKey, decryptCBC, castleSafeParse } from "../src/providers/clarke.js";
 import { opensslDecrypt } from "../src/extractors/vidstuck.js";
@@ -128,4 +129,31 @@ test("pickBest respects type and year", () => {
     typeOf: (item) => item.kind,
   });
   assert.equal(best.id, 1);
+});
+
+test("request() survives an upstream that mislabels ciphertext as JSON", async (t) => {
+  const upstream = http.createServer((_req, res) => {
+    // castle/clarke answers with raw base64 while claiming application/json
+    res.writeHead(200, { "content-type": "application/json;charset=UTF-8" });
+    res.end("QUKnJlY6U+abc123==");
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${upstream.address().port}`;
+  t.after(() => upstream.close());
+
+  const { getJson } = await import("../src/lib/http.js");
+  const body = await getJson(base);
+
+  assert.equal(typeof body, "string", "raw ciphertext comes back as a string");
+  assert.equal(body, "QUKnJlY6U+abc123==");
+
+  // and it must still decrypt rather than throw
+  const { decryptCBC, deriveKey } = await import("../src/providers/clarke.js");
+  const key = deriveKey("ZkpBVG0qa2dmSg==");
+  const cipher = crypto.createCipheriv("aes-128-cbc", key, key);
+  const sealed = Buffer.concat([
+    cipher.update(JSON.stringify({ code: 200, data: { rows: [] } })),
+    cipher.final(),
+  ]).toString("base64");
+  assert.equal(JSON.parse(decryptCBC(sealed, key)).code, 200);
 });

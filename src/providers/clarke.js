@@ -62,12 +62,22 @@ export function deriveKey(securityKeyB64) {
 }
 
 export function decryptCBC(cipherB64, key) {
+  // Mirrors vega-providers: decrypt raw blocks, then strip PKCS7 by hand instead
+  // of letting OpenSSL throw on a malformed pad.
   const decipher = crypto.createDecipheriv("aes-128-cbc", key, key);
+  decipher.setAutoPadding(false);
   const plain = Buffer.concat([
     decipher.update(Buffer.from(String(cipherB64), "base64")),
     decipher.final(),
   ]);
-  const text = plain.toString("utf8");
+  if (!plain.length) throw new Error("Clarke: empty decrypted payload");
+  const pad = plain[plain.length - 1];
+  const body = pad > 0 && pad <= 16 ? plain.subarray(0, plain.length - pad) : plain;
+  const text = body
+    .toString("utf8")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "")
+    .trim();
   if (!text) throw new Error("Clarke: empty decrypted payload");
   return text;
 }
