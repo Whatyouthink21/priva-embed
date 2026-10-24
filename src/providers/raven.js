@@ -235,6 +235,11 @@ async function playData(subjectId, detailPath, season, episode, isSeries, refere
   }
 }
 
+/** movieBoxWeb flags throttled sessions with `data.limited` (v2.5 playback limits). */
+export function playbackLimited(payload) {
+  return Boolean(payload?.data?.limited) && !hasStreams(payload);
+}
+
 function hasStreams(payload) {
   if (!payload || payload.code !== 0 || payload.data?.hasResource === false) return false;
   const sources = [
@@ -320,6 +325,12 @@ export async function resolve({ tmdbId, title, year, type, season = 1, episode =
           referer,
           signal,
         );
+      }
+
+      // v2.5 throttles anonymous sessions; say so instead of returning a bare
+      // empty list the UI would report as "no links".
+      if (playbackLimited(payload)) {
+        throw new Error("Raven is limiting playback for this session — try again later");
       }
 
       if (!payload || payload.data?.hasResource === false) return [];

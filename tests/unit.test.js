@@ -186,3 +186,25 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   assert.equal(hls.direct, "", "hls.js needs CORS, so it must stay proxied");
   assert.match(hls.url, /^\/api\/stream\?u=/);
 });
+
+test("raven reports a throttled session instead of a silent empty list", async () => {
+  const { playbackLimited } = await import("../src/providers/raven.js");
+
+  // v2.5: `data.limited` with no usable stream means the session is throttled.
+  assert.equal(playbackLimited({ code: 0, data: { limited: true, streams: [] } }), true);
+
+  // A limited flag alongside real streams is still playable.
+  assert.equal(
+    playbackLimited({
+      code: 0,
+      data: { limited: true, streams: [{ url: "https://cdn/x.mp4", vipLocked: false }] },
+    }),
+    false,
+  );
+
+  // A normal response is not limited.
+  assert.equal(
+    playbackLimited({ code: 0, data: { streams: [{ url: "https://cdn/x.mp4" }] } }),
+    false,
+  );
+});
