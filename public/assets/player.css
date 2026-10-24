@@ -520,6 +520,7 @@ body[data-state="error"] .splash__status .pulse-dot {
   z-index: 60;
   width: 290px;
   padding: 6px;
+  max-width: calc(100vw - 24px);
   border-radius: 18px;
   border: 1px solid var(--border);
   background: rgba(11, 13, 20, 0.94);
@@ -529,6 +530,38 @@ body[data-state="error"] .splash__status .pulse-dot {
 }
 
 .menu--settings { width: 300px; }
+
+/* The bottom bar sits at the viewport edge, so its menus must open upward or
+   they render below the fold where nothing can reach them. */
+.bottombar .menu {
+  top: auto;
+  bottom: calc(100% + 12px);
+  transform-origin: bottom right;
+  animation: menuInUp 0.18s var(--ease) both;
+  max-height: min(76vh, 480px, calc(100vh - 128px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The panel scrolls as a whole in the bottom bar, so neither the speed list nor
+   the subtitle list can be clipped away in a short iframe. */
+.bottombar .menu__body {
+  max-height: none;
+  overflow: visible;
+}
+
+.bottombar .menu::-webkit-scrollbar { width: 6px; }
+.bottombar .menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 99px;
+}
+
+@keyframes menuInUp {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .menu--providers { width: 300px; }
 .menu--quality { width: 244px; }
 
@@ -1113,7 +1146,10 @@ body.toast-open .toast { opacity: 1; transform: translate(-50%, 0); }
   .topbar__title { font-size: 13px; max-width: 46vw; }
   .topbar__right { gap: 5px; }
   .pill__chevron { display: none; }
-  #qualityBtn { display: none; }
+  /* Keep the quality pill tappable on phones instead of removing the only way
+     to change resolution; it collapses to its icon. */
+  #qualityBtnLabel { display: none; }
+  #qualityBtn { padding: 0 9px; }
   .controls__group .icon-btn#back10,
   .controls__group .icon-btn#fwd10 { display: none; }
   .time { font-size: 10.5px; }
