@@ -86,7 +86,8 @@ iframe.contentWindow.postMessage({ source: "priva-parent", command: "setProvider
 ## Player controls
 
 Hover or tap the frame to bring the chrome back while playing; it stays pinned while
-paused. The bottom bar has play/pause, −10s / +10s, mute, a volume slider, the
+paused. Menus in the bottom bar (subtitles, settings) open upward into the player, so
+they never fall outside a short iframe. The bottom bar has play/pause, −10s / +10s, mute, a volume slider, the
 scrubber, time, subtitles, settings (speed + subtitles), picture-in-picture and
 fullscreen. The top bar has back, the sources pill (Clarke / Bellamy / Raven) and the
 quality pill; on TV the episode pill opens the drawer.

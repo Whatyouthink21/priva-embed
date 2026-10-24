@@ -336,3 +336,60 @@ test("control bar is visible and interactive once playback is ready", async () =
     dom.window.close();
   });
 });
+
+test("bottom-bar menus open upward and are reachable", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550?demo=1`);
+    const { document, getComputedStyle } = dom.window;
+
+    const bar = document.getElementById("bottombar");
+    const settings = document.getElementById("settingsMenu");
+    assert.equal(settings.closest("#bottombar"), bar, "settings menu lives in the bottom bar");
+
+    // Regression: the menu opened downward (top: 100% + 10px) from a bar pinned to
+    // the bottom of the viewport, so it rendered below the fold.
+    const style = getComputedStyle(settings);
+    assert.equal(style.top, "auto", "menu must not be anchored below the bar");
+    assert.match(style.bottom, /calc|px/, "menu must be anchored above the bar");
+
+    // and the top bar's menus must still drop down
+    const providerMenu = getComputedStyle(document.getElementById("providerMenu"));
+    assert.match(providerMenu.top, /calc|px/, "provider menu still opens downward");
+    assert.equal(providerMenu.bottom, "auto");
+
+    dom.window.close();
+  });
+});
+
+test("settings and subtitles buttons actually reveal their menu", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550?demo=1`);
+    const { document } = dom.window;
+    const menu = document.getElementById("settingsMenu");
+    const click = (id) =>
+      document.getElementById(id).dispatchEvent(
+        new dom.window.MouseEvent("click", { bubbles: true }),
+      );
+
+    assert.equal(menu.hidden, true, "closed initially");
+
+    click("settingsBtn");
+    assert.equal(menu.hidden, false, "settings opens the menu");
+    assert.equal(document.getElementById("settingsBtn").getAttribute("aria-expanded"), "true");
+
+    click("settingsBtn");
+    assert.equal(menu.hidden, true, "clicking again closes it");
+
+    click("subtitlesBtn");
+    assert.equal(menu.hidden, false, "subtitles opens the same menu");
+
+    // the menu must contain the speed + subtitle rows, not be an empty shell
+    assert.ok(document.querySelectorAll("#speedList button").length >= 4, "speed options rendered");
+    assert.ok(document.querySelectorAll("#subtitleList button").length >= 1, "subtitle rows rendered");
+
+    click("subtitlesBtn");
+    assert.equal(menu.hidden, true, "subtitles toggles closed");
+
+    dom.window.close();
+  });
+});

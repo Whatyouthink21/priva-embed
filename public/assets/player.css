@@ -529,6 +529,29 @@ body[data-state="error"] .splash__status .pulse-dot {
 }
 
 .menu--settings { width: 300px; }
+
+/* The bottom bar sits at the viewport edge, so its menus must open upward or
+   they render below the fold where nothing can reach them. */
+.bottombar .menu {
+  top: auto;
+  bottom: calc(100% + 12px);
+  transform-origin: bottom right;
+  animation: menuInUp 0.18s var(--ease) both;
+  max-width: calc(100vw - 24px);
+  max-height: min(72vh, 460px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.bottombar .menu__body {
+  max-height: min(150px, 24vh);
+}
+
+@keyframes menuInUp {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 .menu--providers { width: 300px; }
 .menu--quality { width: 244px; }
 

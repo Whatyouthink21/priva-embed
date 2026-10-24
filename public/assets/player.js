@@ -1046,11 +1046,10 @@
     });
     $("subtitlesBtn").addEventListener("click", (event) => {
       event.stopPropagation();
-      $("settingsMenu").hidden = false;
-      $("settingsBtn").setAttribute("aria-expanded", "true");
+      toggleMenu("settingsMenu", "subtitlesBtn");
+      $("subtitlesBtn").setAttribute("aria-expanded", String(!$("settingsMenu").hidden));
       renderSpeedMenu();
       renderSubtitleMenu();
-      openControls();
     });
 
     document.addEventListener("click", (event) => {
@@ -1069,11 +1068,34 @@
 
     $("fullscreenBtn").addEventListener("click", toggleFullscreen);
     $("pipBtn").addEventListener("click", async () => {
+      // iOS Safari only exposes the webkit presentation-mode API.
+      if (typeof video.webkitSetPresentationMode === "function") {
+        try {
+          const next =
+            video.webkitPresentationMode === "picture-in-picture" ? "inline" : "picture-in-picture";
+          video.webkitSetPresentationMode(next);
+          return;
+        } catch {
+          /* fall through to the standard API */
+        }
+      }
+
       try {
-        if (document.pictureInPictureElement) await document.exitPictureInPicture();
-        else await video.requestPictureInPicture();
-      } catch {
-        toast("Picture in picture is not available");
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+          return;
+        }
+        if (!document.pictureInPictureEnabled) {
+          toast("Picture in picture is blocked — allow it on the iframe");
+          return;
+        }
+        await video.requestPictureInPicture();
+      } catch (error) {
+        toast(
+          error?.name === "NotAllowedError"
+            ? "Picture in picture needs the iframe allow=\"picture-in-picture\""
+            : "Picture in picture is not available in this browser",
+        );
       }
     });
 
