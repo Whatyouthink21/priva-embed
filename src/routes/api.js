@@ -20,7 +20,19 @@ function subtitleProxyUrl(subtitle) {
   return `/api/subtitle?u=${b64url(subtitle.url)}`;
 }
 
-function publicStream(stream) {
+/**
+ * Progressive streams (mp4) do not need CORS to play in a <video>, so the browser
+ * can fetch them straight from the CDN using the viewer's own IP. That matters for
+ * engines whose CDN rejects datacenter IPs — proxying them from Render guarantees
+ * a 426/429, while playing them client-side does not.
+ *
+ * HLS and subtitles stay proxied: hls.js and <track> both need CORS headers that
+ * the upstreams do not send.
+ */
+const DIRECT_PLAY_TYPES = new Set(["mp4"]);
+
+export function publicStream(stream) {
+  const direct = DIRECT_PLAY_TYPES.has(stream.type) ? String(stream.url || "") : "";
   return {
     id: stream.id,
     server: stream.server,
@@ -28,7 +40,10 @@ function publicStream(stream) {
     type: stream.type,
     quality: stream.quality,
     language: stream.language,
+    // Same-origin proxy — always usable, and the fallback for `direct`.
     url: streamProxyUrl(stream),
+    // Raw upstream URL the browser may try first (empty when not applicable).
+    direct,
     subtitles: (stream.subtitles || [])
       .filter((subtitle) => subtitle?.url)
       .slice(0, 24)
