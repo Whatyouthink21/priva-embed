@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - arena/**
+    paths-ignore:
+      - "provider-report.md"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   resolve:
@@ -17,4 +23,35 @@ jobs:
           node-version: 20
       - run: npm install --no-audit --no-fund
       - name: Resolve and probe every provider
-        run: node scripts/provider-check.mjs
+        id: check
+        run: |
+          set +e
+          node scripts/provider-check.mjs > /tmp/report.md 2>&1
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat /tmp/report.md
+          {
+            echo "### Live provider check"
+            echo ""
+            echo '```'
+            cat /tmp/report.md
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment the report on the open pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          pr=$(gh pr list --head "$GITHUB_REF_NAME" --json number --jq '.[0].number' || true)
+          if [ -z "$pr" ]; then echo "no pull request for $GITHUB_REF_NAME"; exit 0; fi
+          {
+            echo "**Provider check** — \`$GITHUB_SHA\`"
+            echo ""
+            echo '```'
+            cat /tmp/report.md
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment "$pr" --body-file /tmp/comment.md
+      - name: Fail if nothing played
+        if: steps.check.outputs.exit != '0'
+        run: exit 1
