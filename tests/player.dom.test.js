@@ -430,6 +430,63 @@ test("menus stay inside a narrow, short embed", async () => {
   });
 });
 
+/* ----------------------------- provider reasons ---------------------------- */
+
+test("an empty engine shows why it is empty", async () => {
+  await withServer(async (base) => {
+    const sources = {
+      tmdbId: 550,
+      type: "movie",
+      season: 1,
+      episode: 1,
+      demo: false,
+      skip: [],
+      providers: [
+        {
+          id: "clarke",
+          name: "Clarke",
+          status: "ok",
+          ms: 900,
+          streams: [
+            {
+              id: "clarke-0",
+              server: "Clarke",
+              label: "1080p",
+              type: "hls",
+              quality: "1080",
+              url: "/api/stream?u=aGxz",
+              direct: "",
+              subtitles: [],
+            },
+          ],
+        },
+        {
+          id: "bellamy",
+          name: "Bellamy",
+          status: "error",
+          ms: 4200,
+          message: "All extractors failed (source 1: HTTP 403, source 2: HTTP 429)",
+          streams: [],
+        },
+        { id: "nova", name: "Nova", status: "empty", ms: 300, streams: [] },
+      ],
+    };
+
+    const dom = await loadPlayer(`${base}/player/550`, { sources });
+    const { document } = dom.window;
+
+    const subs = [...document.querySelectorAll("#providerList .menu-item__sub")].map((el) =>
+      el.textContent.trim(),
+    );
+    assert.equal(subs.length, 3);
+    assert.match(subs[1], /unavailable/, "the failed engine still reads as unavailable");
+    assert.match(subs[1], /HTTP 403/, "and says why");
+    assert.match(subs[2], /no links/);
+
+    dom.window.close();
+  });
+});
+
 /* --------------------------- direct mp4 playback --------------------------- */
 
 const mp4Sources = (overrides = {}) => ({
