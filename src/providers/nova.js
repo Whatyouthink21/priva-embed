@@ -104,6 +104,9 @@ async function subtitles({ tmdbId, type, season, episode, signal }) {
         // The subtitle CDN 403s without the player origin.
         headers: playerHeaders,
       }))
+      // The endpoint returns every language it has; English first keeps the
+      // player's default pick (and the top of the menu) useful.
+      .sort((a, b) => Number(b.language.startsWith("en")) - Number(a.language.startsWith("en")))
       .slice(0, 24);
   } catch {
     return [];
