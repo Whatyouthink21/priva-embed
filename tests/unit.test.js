@@ -164,8 +164,8 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   const { publicStream } = await import("../src/routes/api.js");
 
   const mp4 = publicStream({
-    id: "raven-0",
-    server: "Raven",
+    id: "nova-0",
+    server: "Nova",
     label: "720p",
     type: "mp4",
     quality: "720",
@@ -187,24 +187,48 @@ test("mp4 streams expose a direct URL, HLS does not", async () => {
   assert.match(hls.url, /^\/api\/stream\?u=/);
 });
 
-test("raven reports a throttled session instead of a silent empty list", async () => {
-  const { playbackLimited } = await import("../src/providers/raven.js");
+/* ---------------------------------- nova ---------------------------------- */
 
-  // v2.5: `data.limited` with no usable stream means the session is throttled.
-  assert.equal(playbackLimited({ code: 0, data: { limited: true, streams: [] } }), true);
+test("nova ships an intact wasm module with the exports the handshake needs", async () => {
+  const { VIDUKI_WASM_B64 } = await import("../src/providers/oneflex/blobs.js");
+  const { VIDUKI_EXPORTS } = await import("../src/providers/oneflex/crypto.js");
 
-  // A limited flag alongside real streams is still playable.
-  assert.equal(
-    playbackLimited({
-      code: 0,
-      data: { limited: true, streams: [{ url: "https://cdn/x.mp4", vipLocked: false }] },
-    }),
-    false,
-  );
+  const bytes = Buffer.from(VIDUKI_WASM_B64, "base64");
+  assert.equal(bytes.subarray(0, 4).toString("hex"), "0061736d", "a real wasm binary");
+  await WebAssembly.compile(bytes); // throws if the blob was truncated or corrupted
 
-  // A normal response is not limited.
-  assert.equal(
-    playbackLimited({ code: 0, data: { streams: [{ url: "https://cdn/x.mp4" }] } }),
-    false,
-  );
+  const { instance } = await WebAssembly.instantiate(bytes, { env: { abort() {} } });
+  for (const [role, name] of Object.entries(VIDUKI_EXPORTS)) {
+    assert.equal(typeof instance.exports[name], "function", `${role} export ${name} exists`);
+  }
+});
+
+test("nova solves altcha proof-of-work challenges", async () => {
+  const { sha256Hex, solveAltcha } = await import("../src/providers/oneflex/crypto.js");
+
+  const salt = "5ba1c3e2";
+  const answer = 4242;
+  const payload = solveAltcha({
+    algorithm: "SHA-256",
+    challenge: sha256Hex(salt + answer),
+    salt,
+    signature: "s1gn4ture",
+    maxnumber: 100000,
+  });
+
+  assert.ok(payload, "a solution was found");
+  const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+  assert.equal(decoded.number, answer);
+  assert.equal(decoded.signature, "s1gn4ture");
+  assert.equal(sha256Hex(salt + decoded.number), decoded.challenge);
+  assert.ok(Number.isFinite(decoded.took));
+
+  assert.equal(solveAltcha({ salt, challenge: sha256Hex("no-match"), maxnumber: 50 }), null);
+  assert.equal(solveAltcha(null), null);
+});
+
+test("nova refuses ids that are not tmdb numbers without touching the network", async () => {
+  const { resolve } = await import("../src/providers/nova.js");
+  assert.deepEqual(await resolve({ tmdbId: "", type: "movie" }), []);
+  assert.deepEqual(await resolve({ tmdbId: "tt0111161", type: "movie" }), []);
 });

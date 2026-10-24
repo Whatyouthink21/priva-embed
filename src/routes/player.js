@@ -45,7 +45,7 @@ function configFromQuery(req) {
     theme: `#${sanitizeHex(query.theme || query.color)}`,
     autoplay: truthy(query.autoplay ?? query.autoPlay, false),
     autoNext: truthy(query.autoNext ?? query.autonext, true),
-    provider: ["clarke", "bellamy", "raven"].includes(String(query.provider || "").toLowerCase())
+    provider: ["clarke", "bellamy", "nova"].includes(String(query.provider || "").toLowerCase())
       ? String(query.provider).toLowerCase()
       : "auto",
     lang: String(query.lang || "").slice(0, 5),

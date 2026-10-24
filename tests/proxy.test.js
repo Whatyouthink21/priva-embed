@@ -114,7 +114,14 @@ test("player, docs and api endpoints render", async (t) => {
   assert.equal(payload.providers.length, 3);
   assert.deepEqual(
     payload.providers.map((provider) => provider.name),
-    ["Clarke", "Bellamy", "Raven"],
+    ["Clarke", "Bellamy", "Nova"],
+  );
+
+  const oneEngine = await fetch(`${base}/api/sources?demo=1&type=movie&tmdb=550&provider=nova`);
+  assert.deepEqual(
+    (await oneEngine.json()).providers.map((provider) => provider.id),
+    ["nova"],
+    "demo mode honours ?provider=",
   );
 
   const health = await fetch(`${base}/api/health`);

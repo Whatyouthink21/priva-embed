@@ -20,7 +20,7 @@ const DEFAULT_TARGETS = [
   { label: "Game of Thrones S1E1", type: "tv", tmdbId: "1399", season: 1, episode: 1 },
 ];
 
-const PROVIDERS = ["clarke", "bellamy", "raven"];
+const PROVIDERS = ["clarke", "bellamy", "nova"];
 
 /** /api/stream?u=<base64url> -> the upstream URL */
 function decodeTarget(proxyPath) {

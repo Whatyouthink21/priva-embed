@@ -1,6 +1,6 @@
 import express from "express";
 import { getMeta, getSeason, fallbackMeta } from "../tmdb.js";
-import { resolveSources, providerList } from "../providers/index.js";
+import { resolveSources, providerList, PROVIDERS } from "../providers/index.js";
 import { bellamy } from "../providers/index.js";
 import { b64url, encodeHeaders } from "../lib/tokens.js";
 import { cached } from "../lib/cache.js";
@@ -97,8 +97,9 @@ router.get("/sources", asyncRoute(async (req, res) => {
   const season = Math.max(1, Number(req.query.season) || 1);
   const episode = Math.max(1, Number(req.query.episode) || 1);
   const requested = String(req.query.provider || "auto").toLowerCase();
+  // Ask the registry instead of a hardcoded list so a provider swap cannot drift.
   const providers =
-    requested && requested !== "auto" && ["clarke", "bellamy", "raven"].includes(requested)
+    requested && requested !== "auto" && Object.hasOwn(PROVIDERS, requested)
       ? [requested]
       : undefined;
   const refresh = String(req.query.refresh || "") === "1";
@@ -109,8 +110,13 @@ router.get("/sources", asyncRoute(async (req, res) => {
 
   if (String(req.query.demo || "") === "1") {
     const meta = demoMeta(type);
+    const demo = demoSources({ type, season, episode });
     return res.json({
-      ...demoSources({ type, season, episode }),
+      ...demo,
+      // Honour ?provider= here too, so previewing one engine matches the real path.
+      providers: providers
+        ? demo.providers.filter((provider) => providers.includes(provider.id))
+        : demo.providers,
       tmdbId: meta.id,
     });
   }

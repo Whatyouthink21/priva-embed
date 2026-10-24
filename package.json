@@ -2,7 +2,7 @@
   "name": "priva-embed",
   "version": "1.0.0",
   "private": true,
-  "description": "Priva Embed - a drop-in iframe player that streams movies and TV shows from three providers (Clarke, Bellamy, Raven).",
+  "description": "Priva Embed - a drop-in iframe player that streams movies and TV shows from three providers (Clarke, Bellamy, Nova).",
   "type": "module",
   "main": "src/server.js",
   "engines": {
