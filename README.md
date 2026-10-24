@@ -98,10 +98,24 @@ quality pill; on TV the episode pill opens the drawer.
 | ------ | ------ |
 | **Clarke** | Working. Encrypted-envelope API; verified live across movies and TV. |
 | **Bellamy** | Working. Fans out to the three sub-extractors and merges links. |
-| **Raven** | Resolves links, but the media CDN answers **426/429** to datacenter IPs. Same on GitHub Actions and Render, so its links usually will not play from a hosted server. The player detects the failure and falls through to Clarke/Bellamy. |
+| **Raven** | Resolves links. Its media CDN answers **426/429** to datacenter IPs (GitHub Actions, Render), so its mp4 links are handed to the browser to play **directly from the viewer's IP** — see below. |
 
 The player tries Clarke first, then Bellamy, then Raven, and only moves on when a link
 actually fails — so a dead engine never blocks playback.
+
+### Direct playback vs the relay
+
+HLS manifests and subtitles always go through the same-origin relay (`/api/stream`,
+`/api/subtitle`), because hls.js and `<track>` need CORS headers the upstreams do not
+send. Progressive **mp4** streams are different: a `<video src>` needs no CORS, so
+`/api/sources` also returns a `direct` URL for them and the player tries that first.
+
+That is what makes Raven usable. Its CDN rejects our server's datacenter IP with
+`426`, but it serves the same URL to a normal viewer's IP — which is exactly how the
+Vega app plays it, in the browser rather than on a server. If the direct attempt
+fails or stalls for 9s, the player silently retries through the relay, and only then
+moves to the next provider. `node scripts/provider-check.mjs` reports `proxy-ok` or
+`direct` per provider so the two paths stay distinguishable.
 
 ## Preview mode (`?demo=1`)
 

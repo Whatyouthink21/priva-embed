@@ -106,6 +106,26 @@ async function headerMatrix(url, streamHeaders = {}) {
   return results;
 }
 
+/** Probe the raw upstream URL from this machine (no proxy, no headers). */
+async function probeDirect(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, {
+      headers: { Range: "bytes=0-1023" },
+      signal: controller.signal,
+    });
+    return {
+      status: response.status,
+      reachable: response.ok || response.status === 206,
+    };
+  } catch (error) {
+    return { status: "err", reachable: false, error: error?.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function probeStream(base, stream) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
@@ -178,8 +198,16 @@ for (const target of targets) {
   for (const result of results) {
     let probe = null;
     if (result.first) probe = await probeStream(base, result.first);
+
+    // A `direct` URL means the browser can fetch this itself, which is the only
+    // path that works when the CDN blocks datacenter IPs like this runner.
+    let directProbe = null;
+    if (result.first?.direct) {
+      directProbe = await probeDirect(result.first.direct);
+    }
     const ok = Boolean(probe?.ok);
-    if (ok) titlePlayable = true;
+    const directOk = Boolean(directProbe?.reachable);
+    if (ok || directOk) titlePlayable = true;
 
     // The API only exposes proxy paths; recover the real upstream for diagnosis.
     let matrix = null;
@@ -188,7 +216,15 @@ for (const target of targets) {
       if (upstream) matrix = await headerMatrix(upstream, result.first.headers || {});
     }
 
-    rows.push({ label, provider: result.provider, ...result, probe, matrix });
+    rows.push({
+      label,
+      provider: result.provider,
+      ...result,
+      probe,
+      direct: result.first?.direct || "",
+      directProbe,
+      matrix,
+    });
     console.log(
       `RESULT ${JSON.stringify({
         title: label,
@@ -198,6 +234,8 @@ for (const target of targets) {
         streams: result.streams,
         kinds: result.kinds,
         probe,
+        direct: result.first?.direct ? "yes" : "",
+        directProbe,
         matrix,
         error: result.error,
         matchedTitle: result.title,
@@ -216,12 +254,14 @@ for (const row of rows) {
       row.provider.padEnd(8),
       row.status.padEnd(12),
       `${String(row.streams).padStart(2)} links`.padEnd(9),
-      row.probe?.ok ? "PLAYS" : "no",
+      row.probe?.ok ? "proxy-ok" : row.direct && row.directProbe?.reachable ? "direct-only" : "no",
       row.error ? `(${row.error})` : "",
     ].join(" "),
   );
 }
 console.log(`\nplayable titles: ${playableTitles}/${targets.length}`);
+console.log("proxy-ok  = the server relay fetched the media");
+console.log("direct    = only the raw CDN URL worked; the browser plays it, the server cannot");
 
 server.closeAllConnections?.();
 server.close();

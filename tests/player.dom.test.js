@@ -55,11 +55,13 @@ function stubMedia(window) {
     configurable: true,
   });
   proto.canPlayType = () => "";
-  // jsdom cannot decode media; swallow the synthetic error events it fires.
+  // jsdom cannot decode media, so it fires error events we don't care about.
+  // preventDefault() keeps them quiet WITHOUT stopping propagation, otherwise the
+  // player's own error handler would never run (it drives the proxy fallback).
   window.addEventListener(
     "error",
     (event) => {
-      if (event.target && event.target.tagName === "VIDEO") event.stopPropagation();
+      if (event.target && event.target.tagName === "VIDEO") event.preventDefault();
     },
     true,
   );
@@ -127,7 +129,18 @@ async function loadPlayer(url, options = {}) {
     beforeParse(window) {
       stubMedia(window);
       stubHls(window, options);
-      window.fetch = (input, init) => fetch(new URL(String(input), url).toString(), init);
+      window.fetch = (input, init) => {
+        const target = new URL(String(input), url).toString();
+        // Let a test inject a crafted source list (e.g. an mp4 with a direct URL).
+        if (options.sources && target.includes("/api/sources")) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(options.sources),
+          });
+        }
+        return fetch(target, init);
+      };
       window.matchMedia = () => ({
         matches: false,
         addEventListener() {},
@@ -414,5 +427,84 @@ test("menus stay inside a narrow, short embed", async () => {
     assert.ok(Number.isFinite(height), "panel height is bounded");
     assert.ok(height <= dom.window.innerHeight - 128, "panel height leaves room for the top bar");
     assert.equal(settings.overflowY, "auto", "the panel scrolls instead of clipping");
+  });
+});
+
+/* --------------------------- direct mp4 playback --------------------------- */
+
+const mp4Sources = (overrides = {}) => ({
+  tmdbId: 550,
+  type: "movie",
+  season: 1,
+  episode: 1,
+  demo: false,
+  skip: [],
+  providers: [
+    {
+      id: "raven",
+      name: "Raven",
+      status: "ok",
+      ms: 900,
+      streams: [
+        {
+          id: "raven-0",
+          server: "Raven",
+          label: "720p",
+          type: "mp4",
+          quality: "720",
+          url: "/api/stream?u=cHJveHk",
+          direct: "https://cdn.example.com/movie.mp4?sig=abc",
+          subtitles: [],
+          ...overrides,
+        },
+      ],
+    },
+  ],
+});
+
+test("mp4 playback tries the direct CDN url first", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550`, { sources: mp4Sources() });
+    const video = dom.window.document.getElementById("video");
+
+    for (let i = 0; i < 40 && !video.getAttribute("src"); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    // Datacenter-hosted servers get 426 from this CDN, so the browser must try
+    // the raw URL from the viewer's own IP before falling back to our relay.
+    assert.equal(
+      video.getAttribute("src"),
+      "https://cdn.example.com/movie.mp4?sig=abc",
+      "direct URL is attempted first",
+    );
+
+    dom.window.close();
+  });
+});
+
+test("a failed direct link silently retries through the proxy", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550`, { sources: mp4Sources() });
+    const { document, Event } = dom.window;
+    const video = document.getElementById("video");
+
+    for (let i = 0; i < 40 && !video.getAttribute("src"); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.match(video.getAttribute("src"), /^https:\/\/cdn\.example\.com/);
+
+    // Simulate the CDN rejecting the browser/user IP.
+    video.dispatchEvent(new Event("error"));
+
+    for (let i = 0; i < 20 && !/^\/api\/stream/.test(video.getAttribute("src") || ""); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    assert.match(video.getAttribute("src"), /^\/api\/stream\?u=/, "falls back to the relay");
+    assert.notEqual(document.body.dataset.state, "error", "the provider is not abandoned");
+    assert.match(document.getElementById("toast").textContent, /relay|blocked/i);
+
+    dom.window.close();
   });
 });

@@ -157,3 +157,32 @@ test("request() survives an upstream that mislabels ciphertext as JSON", async (
   ]).toString("base64");
   assert.equal(JSON.parse(decryptCBC(sealed, key)).code, 200);
 });
+
+/* ------------------------------ direct playback ----------------------------- */
+
+test("mp4 streams expose a direct URL, HLS does not", async () => {
+  const { publicStream } = await import("../src/routes/api.js");
+
+  const mp4 = publicStream({
+    id: "raven-0",
+    server: "Raven",
+    label: "720p",
+    type: "mp4",
+    quality: "720",
+    url: "https://cdn.example.com/movie.mp4?sig=abc",
+    headers: { Referer: "https://officialmoviebox.com/" },
+  });
+  assert.equal(mp4.direct, "https://cdn.example.com/movie.mp4?sig=abc");
+  assert.match(mp4.url, /^\/api\/stream\?u=/, "proxy stays available as the fallback");
+
+  const hls = publicStream({
+    id: "clarke-0",
+    server: "Clarke",
+    label: "1080p",
+    type: "hls",
+    quality: "1080",
+    url: "https://cdn.example.com/master.m3u8",
+  });
+  assert.equal(hls.direct, "", "hls.js needs CORS, so it must stay proxied");
+  assert.match(hls.url, /^\/api\/stream\?u=/);
+});

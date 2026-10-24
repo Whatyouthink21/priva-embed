@@ -155,6 +155,7 @@
   };
 
   function destroyPlayback() {
+    clearDirectFallback();
     if (state.hls) {
       try {
         state.hls.destroy();
@@ -165,6 +166,37 @@
     }
     video.removeAttribute("src");
     video.load();
+  }
+
+  /* Some engines' CDNs reject our server IP but serve the viewer's, so a
+     progressive stream is attempted straight from the browser first. If that
+     fails (blocked, no CORS-free media, stall) we silently retry via the proxy
+     before giving up on the provider. */
+  let directFallback = null;
+  let directTimer = null;
+
+  function clearDirectFallback() {
+    clearTimeout(directTimer);
+    directTimer = null;
+    directFallback = null;
+  }
+
+  function useProxyFallback({ notify = false } = {}) {
+    if (!directFallback) return false;
+    const { proxy, start, autoplay } = directFallback;
+    clearDirectFallback();
+    if (notify) toast("Direct link blocked — using the server relay");
+    video.src = proxy;
+    video.load();
+    if (start > 0) {
+      try {
+        video.currentTime = start;
+      } catch {
+        /* noop */
+      }
+    }
+    if (autoplay) video.play().catch(() => {});
+    return true;
   }
 
   async function attach(stream, { autoplay = false, start = 0 } = {}) {
@@ -222,6 +254,13 @@
         handlePlaybackFailure();
         return;
       }
+    } else if (stream.direct) {
+      directFallback = { proxy: source, start, autoplay };
+      video.src = stream.direct;
+      // No error event fires when a CDN simply stalls, so watchdog it too.
+      directTimer = setTimeout(() => {
+        if (video.readyState < 2) useProxyFallback();
+      }, 9000);
     } else {
       video.src = source;
     }
@@ -941,7 +980,14 @@
     body.classList.remove("is-buffering");
     failureCount = 0;
   });
-  video.addEventListener("canplay", () => body.classList.remove("is-buffering"));
+  video.addEventListener("canplay", () => {
+    body.classList.remove("is-buffering");
+    if (video.readyState >= 2) clearDirectFallback();
+  });
+
+  video.addEventListener("loadeddata", () => {
+    if (video.readyState >= 2) clearDirectFallback();
+  });
 
   video.addEventListener("timeupdate", () => {
     updateProgress();
@@ -963,6 +1009,8 @@
   });
 
   video.addEventListener("error", () => {
+    // A dead direct link is an expected outcome, not a provider failure.
+    if (useProxyFallback({ notify: true })) return;
     if (body.dataset.state === "loading") return;
     handlePlaybackFailure();
   });
