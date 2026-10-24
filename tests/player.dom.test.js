@@ -393,3 +393,26 @@ test("settings and subtitles buttons actually reveal their menu", async () => {
     dom.window.close();
   });
 });
+
+test("menus stay inside a narrow, short embed", async () => {
+  await withServer(async (base) => {
+    const dom = await loadPlayer(`${base}/player/550?demo=1`);
+    const { document, getComputedStyle } = dom.window;
+
+    const viewport = dom.window.innerWidth;
+    // No menu may be wider than the viewport (they are 290-300px wide by default).
+    for (const id of ["providerMenu", "qualityMenu", "settingsMenu"]) {
+      const style = getComputedStyle(document.getElementById(id));
+      const width = Number.parseFloat(style.maxWidth);
+      assert.ok(Number.isFinite(width), `#${id} has a width cap`);
+      assert.ok(width <= viewport - 24, `#${id} cannot overflow the viewport (${width})`);
+    }
+
+    // A short iframe must scroll the panel, not clip half of it.
+    const settings = getComputedStyle(document.getElementById("settingsMenu"));
+    const height = Number.parseFloat(settings.maxHeight);
+    assert.ok(Number.isFinite(height), "panel height is bounded");
+    assert.ok(height <= dom.window.innerHeight - 128, "panel height leaves room for the top bar");
+    assert.equal(settings.overflowY, "auto", "the panel scrolls instead of clipping");
+  });
+});
