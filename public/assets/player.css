@@ -23,12 +23,6 @@
 
 [hidden] { display: none !important; }
 
-body[data-state="loading"] .bottombar,
-body[data-state="error"] .bottombar {
-  opacity: 0;
-  pointer-events: none;
-}
-
 html, body {
   margin: 0;
   padding: 0;
@@ -537,8 +531,6 @@ body[data-state="error"] .splash__status .pulse-dot {
 .menu--settings { width: 300px; }
 .menu--providers { width: 300px; }
 .menu--quality { width: 244px; }
-
-body.loading .bottombar { opacity: 0; pointer-events: none; }
 
 @keyframes menuIn {
   from { opacity: 0; transform: translateY(-6px) scale(0.98); }

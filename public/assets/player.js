@@ -70,6 +70,10 @@
 
   const setState = (next) => {
     body.dataset.state = next;
+    // `loading` used to be a permanent class on <body>; make sure no stale
+    // class-based rule can keep the chrome hidden once we leave that state.
+    if (next !== "loading") body.classList.remove("loading");
+    else body.classList.add("loading");
   };
 
   let toastTimer;
@@ -813,8 +817,11 @@
     const interactive = playbackState !== "loading" && playbackState !== "error";
     if (!interactive) {
       body.classList.add("controls-open");
+      body.classList.remove("controls-hidden");
       return;
     }
+    // While paused the chrome stays pinned; it only auto-hides during playback.
+    if (playbackState !== "playing") state.controlsOpen = true;
     if (state.controlsOpen) body.classList.add("controls-open");
     else body.classList.remove("controls-open");
     body.classList.toggle("controls-hidden", !state.controlsOpen && playbackState === "playing");

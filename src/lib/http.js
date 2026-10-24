@@ -61,14 +61,19 @@ export async function request(url, options = {}) {
       if (responseType === "buffer") return Buffer.from(await response.arrayBuffer());
       if (responseType === "text") return await response.text();
 
+      // Some upstreams (castle/clarke) label raw ciphertext as application/json.
+      // axios falls back to the raw string in that case, so do the same instead
+      // of letting response.json() throw and take the whole provider down.
       const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("json")) return await response.json();
       const text = await response.text();
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
+      if (contentType.includes("json") || /^[\s]*[[{]/.test(text)) {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return text;
+        }
       }
+      return text;
     } catch (error) {
       lastError = error;
       if (error?.name === "AbortError" || abortSignal.aborted) break;

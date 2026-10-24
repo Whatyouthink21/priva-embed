@@ -59,7 +59,7 @@ export function renderPlayer({ meta, type, season, episode, config }) {
 <link rel="stylesheet" href="/assets/player.css" />
 <style>:root{--primary:${escapeHtml(config.theme)};}</style>
 </head>
-<body class="loading" data-state="loading">
+<body data-state="loading">
   <div class="app" id="app">
     <div class="backdrop" id="backdrop">
       ${backdrop ? `<div class="backdrop__image" style="background-image:url('${escapeHtml(backdrop)}')"></div>` : ""}
